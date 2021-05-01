@@ -1,2 +1,1 @@
-# streamad
-Real-Time Streaming Anomaly Detector
+# Real-Time Streaming Anomaly Detector
