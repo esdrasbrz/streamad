@@ -1,4 +1,5 @@
 from typing import Tuple
+from datetime import datetime
 import faust
 
 
@@ -50,3 +51,8 @@ class HtmConfig(faust.Record, validation=True):
     spatial_pooler: SpatialPoolerConfig = SpatialPoolerConfig()
     temporal_memory: TemporalMemoryConfig = TemporalMemoryConfig()
     anomaly_likelihood: AnomalyLikelihoodConfig = AnomalyLikelihoodConfig()
+
+
+class Input(faust.Record, validation=True):
+    ts: datetime
+    value: float
