@@ -1,3 +1,4 @@
 htm.core>=2.1.15
 faust==1.10.4
 aiofile==3.5.0
+aioredis==2.0.0a1

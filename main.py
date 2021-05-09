@@ -1,37 +1,30 @@
 import os
 import logging
+import asyncio
+from aioredis import Redis
 import faust
 from faust.web import View, Request, Response
 from htm.bindings.sdr import SDR
 from streamad.models import HtmConfig, Input, EncoderInput, ModelMeta
 from streamad.models import SpatialPoolerInput
 from streamad.encoders import get_time_encoder, get_value_encoder
-from streamad.htm import get_spatial_pooler
+from streamad.htm import get_spatial_pooler, update_spatial_pooler_state
 from streamad.utils import b64_pickle, b64_unpickle
+from streamad.config import get_config, set_config
 
 
 app = faust.App(
     'streamad',
     broker='kafka://' + os.getenv('KAFKA_BROKER', 'localhost:9092')
 )
+redis = Redis.from_url(os.getenv('REDIS_URL', 'redis://localhost'))
 
-config_table = app.Table(
-    'config', key_type=str, value_type=HtmConfig)
-
-update_config_topic = app.topic(
-    'streamad-update-config', key_type=str, value_type=HtmConfig)
 input_topic = app.topic(
-    'streamad-input', key_type=str, value_type=Input)
+    'streamad-input', value_type=Input, key_type=str)
 encoder_topic = app.topic(
     'streamad-encoder', value_type=EncoderInput)
 spatial_pooler_topic = app.topic(
     'streamad-spatial-pooler', value_type=SpatialPoolerInput, key_type=str)
-
-
-@app.agent(update_config_topic)
-async def update_config(config_stream):
-    async for model_id, config in config_stream.items():
-        config_table[model_id] = config
 
 
 @app.page('/config/{model_id}')
@@ -40,7 +33,7 @@ class Config(View):
         body = await request.json()
         try:
             config = HtmConfig.from_data(body)
-            await update_config.cast(value=config, key=model_id)
+            await set_config(redis, model_id, config)
 
             logging.info('updated configuration for %s', model_id)
             return self.json({
@@ -49,12 +42,9 @@ class Config(View):
         except ValueError as e:
             return self.error(400, str(e))
 
-    @app.table_route(table=config_table, match_info='model_id')
     async def get(self, request: Request, model_id: str) -> Response:
-        if model_id in config_table:
-            config = config_table[model_id]
-            return self.json(config)
-        return self.error(404, f'Model {model_id} not configured')
+        config = await get_config(redis, model_id)
+        return self.json(config)
 
 
 ## ----
@@ -65,13 +55,7 @@ class Config(View):
 @app.agent(input_topic)
 async def input_agent(input_stream):
     async for model_id, row in input_stream.items():
-        # check if model_id is configured
-        if model_id in config_table:
-            config = config_table[model_id]
-        else:
-            # start the default configuration
-            config = HtmConfig()
-            config_table[model_id] = config
+        config = await get_config(redis, model_id)
 
         meta = ModelMeta(config=config, model_id=model_id)
         encoder_input = EncoderInput(
@@ -125,8 +109,8 @@ async def spatial_pooler_agent(input_stream):
         if model_id in sps:
             sp = sps[model_id]
         else:
-            sp = get_spatial_pooler(
-                sp_input.encoding_width, sp_input.meta.config.spatial_pooler)
+            sp = await get_spatial_pooler(
+                sp_input.encoding_width, sp_input.meta.config.spatial_pooler, model_id, redis)
             sps[model_id] = sp
 
         # deserialize encoding
@@ -136,8 +120,6 @@ async def spatial_pooler_agent(input_stream):
         active_columns = SDR(sp.getColumnDimensions())
         sp.compute(encoding, True, active_columns)
         active_columns_bytes = b64_pickle(active_columns)
-
-        logging.info('len = %d', len(active_columns_bytes))
 
 
 if __name__ == '__main__':

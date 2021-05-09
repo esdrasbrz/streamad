@@ -11,7 +11,7 @@ app = faust.App(
     broker='kafka://' + os.getenv('KAFKA_BROKER', 'localhost:9092')
 )
 input_topic = app.topic(
-    'streamad-input', key_type=str, value_type=Input)
+    'streamad-input', value_type=Input, key_type=str)
 
 
 @app.command(
