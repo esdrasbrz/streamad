@@ -10,7 +10,7 @@ local:
 produce:
 	python3 test.py produce --path $(path)
 
-kafka:
+infra:
 	docker-compose up zookeeper broker control-center
 
 clean:

@@ -4,6 +4,7 @@ services:
     build: .
     depends_on:
       - control-center
+      - redis
     environment:
       - KAFKA_BROKER=broker:29092
 
@@ -76,3 +77,8 @@ services:
       CONTROL_CENTER_MONITORING_INTERCEPTOR_TOPIC_PARTITIONS: 1
       CONFLUENT_METRICS_TOPIC_REPLICATION: 1
       PORT: 9021
+
+  redis:
+    image: redis
+    ports:
+      - "6379:6379"

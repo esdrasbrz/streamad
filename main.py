@@ -3,7 +3,8 @@ import logging
 import faust
 from faust.web import View, Request, Response
 from htm.bindings.sdr import SDR
-from streamad.models import HtmConfig, Input, EncoderInput, ModelMeta, SpatialPoolerInput
+from streamad.models import HtmConfig, Input, EncoderInput, ModelMeta
+from streamad.models import SpatialPoolerInput
 from streamad.encoders import get_time_encoder, get_value_encoder
 from streamad.htm import get_spatial_pooler
 from streamad.utils import b64_pickle, b64_unpickle
@@ -16,6 +17,7 @@ app = faust.App(
 
 config_table = app.Table(
     'config', key_type=str, value_type=HtmConfig)
+
 update_config_topic = app.topic(
     'streamad-update-config', key_type=str, value_type=HtmConfig)
 input_topic = app.topic(
@@ -134,6 +136,8 @@ async def spatial_pooler_agent(input_stream):
         active_columns = SDR(sp.getColumnDimensions())
         sp.compute(encoding, True, active_columns)
         active_columns_bytes = b64_pickle(active_columns)
+
+        logging.info('len = %d', len(active_columns_bytes))
 
 
 if __name__ == '__main__':
