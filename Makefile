@@ -11,7 +11,7 @@ produce:
 	python3 test.py produce --path $(path)
 
 infra:
-	docker-compose up zookeeper broker control-center
+	docker-compose up zookeeper broker control-center redis
 
 clean:
 	docker-compose down
