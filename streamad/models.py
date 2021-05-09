@@ -56,3 +56,14 @@ class HtmConfig(faust.Record, validation=True):
 class Input(faust.Record, validation=True):
     ts: datetime
     value: float
+
+
+class ModelMeta(faust.Record, validation=True):
+    config: HtmConfig
+    model_id: str
+
+
+class EncoderInput(faust.Record, validation=True):
+    meta: ModelMeta
+    ts: datetime
+    value: float

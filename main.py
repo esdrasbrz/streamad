@@ -1,11 +1,11 @@
 import os
 import logging
-import asyncio
+import pickle
 import faust
 from faust.web import View, Request, Response
-from faust.cli import option
-from streamad.models import HtmConfig, Input
-from streamad.utils import parse_csv_data
+from htm.bindings.sdr import SDR
+from streamad.models import HtmConfig, Input, EncoderInput, ModelMeta
+from streamad.encoders import get_time_encoder, get_value_encoder
 
 
 app = faust.App(
@@ -19,6 +19,8 @@ update_config_topic = app.topic(
     'streamad-update-config', key_type=str, value_type=HtmConfig)
 input_topic = app.topic(
     'streamad-input', key_type=str, value_type=Input)
+encoder_topic = app.topic(
+    'streamad-encoder-topic', value_type=EncoderInput)
 
 
 @app.agent(update_config_topic)
@@ -50,32 +52,53 @@ class Config(View):
         return self.error(404, f'Model {model_id} not configured')
 
 
+## ----
+## Encoders
+## ----
+
+
+@app.agent(encoder_topic)
+async def encoder(input_stream):
+    async for enc_input in input_stream:
+        time_enc = get_time_encoder(
+            tuple(enc_input.meta.config.encoder.time.time_of_day),
+            enc_input.meta.config.encoder.time.weekend)
+        value_enc = get_value_encoder(
+            enc_input.meta.config.encoder.value.size,
+            enc_input.meta.config.encoder.value.sparsity,
+            enc_input.meta.config.encoder.value.resolution)
+
+        time_sdr = time_enc.encode(enc_input.ts)
+        value_sdr = value_enc.encode(enc_input.value)
+
+        # concatenate the encoding
+        encoding = SDR(time_enc.size + value_enc.size).concatenate([value_sdr, time_sdr])
+        encoding_bytes = pickle.dumps(encoding)
+
+        logging.info('encoding finished, size = %d', len(encoding_bytes))
+
+
+## ----
+## Streamad Input 
+## ----
+
+
 @app.agent(input_topic)
 async def input_agent(input_stream):
     async for model_id, row in input_stream.items():
-        logging.info('%s -> %s', model_id, row)
+        # check if model_id is configured
+        if model_id in config_table:
+            config = config_table[model_id]
+        else:
+            # start the default configuration
+            config = HtmConfig()
+            config_table[model_id] = config
 
+        meta = ModelMeta(config=config, model_id=model_id)
+        encoder_input = EncoderInput(
+            meta=meta, ts=row.ts, value=row.value)
 
-@app.command(
-    option('--path',
-           type=str, default=None,
-           help='Path with csv data to be produced'),
-)
-async def produce(self, path) -> None:
-    if path is None:
-        self.say("You must provide the --path option")
-
-    async def produce_values(model_id, values):
-        async for value in values:
-            await input_topic.send(key=model_id, value=value)
-
-    files = os.listdir(path)
-    produce_args = ((fn.lower(), os.path.join(path, fn)) for fn in files)
-
-    await asyncio.gather(*[
-        produce_values(model_id, parse_csv_data(filepath))
-        for model_id, filepath in produce_args
-    ])
+        await encoder_topic.send(value=encoder_input)
 
 
 if __name__ == '__main__':

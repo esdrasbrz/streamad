@@ -8,7 +8,7 @@ local:
 	python3 main.py worker -l info
 
 produce:
-	python3 main.py produce --path $(path)
+	python3 test.py produce --path $(path)
 
 kafka:
 	docker-compose up zookeeper broker control-center
