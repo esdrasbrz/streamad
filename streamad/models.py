@@ -22,7 +22,7 @@ class EncoderConfig(faust.Record, validation=True):
 class SpatialPoolerConfig(faust.Record, validation=True):
     boost_strength: float = 0.0
     column_count: int = 2048
-    local_area_aensity: float = 40/2048
+    local_area_density: float = 40/2048
     potential_pct: float = 0.4
     syn_perm_active_inc: float = 0.003
     syn_perm_connected: float = 0.2
@@ -67,3 +67,9 @@ class EncoderInput(faust.Record, validation=True):
     meta: ModelMeta
     ts: datetime
     value: float
+
+
+class SpatialPoolerInput(faust.Record, validation=True):
+    meta: ModelMeta
+    encoding_width: int
+    encoding: str
