@@ -1,16 +1,19 @@
 import os
 import logging
-import asyncio
+import time
 from aioredis import Redis
 import faust
 from faust.web import View, Request, Response
 from htm.bindings.sdr import SDR
 from streamad.models import HtmConfig, Input, EncoderInput, ModelMeta
-from streamad.models import SpatialPoolerInput
+from streamad.models import SpatialPoolerInput, TemporalMemoryInput
 from streamad.encoders import get_time_encoder, get_value_encoder
-from streamad.htm import get_spatial_pooler, update_spatial_pooler_state
+from streamad.htm import get_spatial_pooler, get_temporal_memory, update_state
 from streamad.utils import b64_pickle, b64_unpickle
 from streamad.config import get_config, set_config
+
+
+_MODEL_COMMIT_INTERVAL_SEC = int(os.getenv('MODEL_COMMIT_INTERVAL_SEC', '60'))
 
 
 app = faust.App(
@@ -25,6 +28,9 @@ encoder_topic = app.topic(
     'streamad-encoder', value_type=EncoderInput)
 spatial_pooler_topic = app.topic(
     'streamad-spatial-pooler', value_type=SpatialPoolerInput, key_type=str)
+temporal_memory_topic = app.topic(
+    'streamad-temporal-memory', value_type=TemporalMemoryInput, key_type=str)
+
 
 
 @app.page('/config/{model_id}')
@@ -107,11 +113,13 @@ async def spatial_pooler_agent(input_stream):
     async for model_id, sp_input in input_stream.items():
         # load spatial pooler object
         if model_id in sps:
-            sp = sps[model_id]
+            sp = sps[model_id][0]
+            last_commit = sps[model_id][1]
         else:
             sp = await get_spatial_pooler(
                 sp_input.encoding_width, sp_input.meta.config.spatial_pooler, model_id, redis)
-            sps[model_id] = sp
+            last_commit = time.time()
+            sps[model_id] = (sp, last_commit)
 
         # deserialize encoding
         encoding = b64_unpickle(sp_input.encoding)
@@ -120,6 +128,48 @@ async def spatial_pooler_agent(input_stream):
         active_columns = SDR(sp.getColumnDimensions())
         sp.compute(encoding, True, active_columns)
         active_columns_bytes = b64_pickle(active_columns)
+
+        tm_input = TemporalMemoryInput(meta=sp_input.meta, active_columns=active_columns_bytes)
+        await temporal_memory_topic.send(key=model_id, value=tm_input)
+        
+        # commit model
+        if time.time() - last_commit >= _MODEL_COMMIT_INTERVAL_SEC:
+            logging.info('Commit spatial pooler for model %s', model_id)
+            await update_state(sp, model_id, 'spatial-pooler', redis)
+
+            sps[model_id] = (sp, time.time())
+
+
+## ----
+## Temporal Memory
+## ----
+
+
+@app.agent(temporal_memory_topic)
+async def temporal_memory_agent(input_stream):
+    tms = {}
+
+    async for model_id, tm_input in input_stream.items():
+        # load temporal memory object
+        if model_id in tms:
+            tm = tms[model_id][0]
+            last_commit = tms[model_id][1]
+        else:
+            tm = await get_temporal_memory(
+                tm_input.meta.config.spatial_pooler, tm_input.meta.config.temporal_memory, model_id, redis)
+            last_commit = time.time()
+            tms[model_id] = (tm, last_commit)
+
+        # deserialize encoding
+        active_columns = b64_unpickle(tm_input.active_columns)
+        tm.compute(active_columns, learn=True)
+
+        # commit model
+        if time.time() - last_commit >= _MODEL_COMMIT_INTERVAL_SEC:
+            logging.info('Commit temporal memory for model %s', model_id)
+            await update_state(tm, model_id, 'temporal-memory', redis)
+
+            tms[model_id] = (tm, time.time())
 
 
 if __name__ == '__main__':

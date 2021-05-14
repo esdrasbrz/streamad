@@ -30,7 +30,7 @@ class SpatialPoolerConfig(faust.Record, validation=True):
 
 
 class TemporalMemoryConfig(faust.Record, validation=True):
-    activation_threshold: float = 13
+    activation_threshold: int = 13
     cells_per_column: int = 32
     initial_perm: float = 0.21
     max_segments_per_cell: int = 128
@@ -73,3 +73,8 @@ class SpatialPoolerInput(faust.Record, validation=True):
     meta: ModelMeta
     encoding_width: int
     encoding: str
+
+
+class TemporalMemoryInput(faust.Record, validation=True):
+    meta: ModelMeta
+    active_columns: str
