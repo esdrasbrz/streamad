@@ -42,8 +42,9 @@ class TemporalMemoryConfig(faust.Record, validation=True):
 
 
 class AnomalyLikelihoodConfig(faust.Record, validation=True):
-    probationary_pct: float = 0.1
+    learning_period: int = 288
     reestimation_period: int = 100
+    estimation_samples: int = 100
 
 
 class HtmConfig(faust.Record, validation=True):
@@ -70,11 +71,16 @@ class EncoderInput(faust.Record, validation=True):
 
 
 class SpatialPoolerInput(faust.Record, validation=True):
-    meta: ModelMeta
+    inp: EncoderInput
     encoding_width: int
     encoding: str
 
 
 class TemporalMemoryInput(faust.Record, validation=True):
-    meta: ModelMeta
+    inp: EncoderInput
     active_columns: str
+
+
+class AnomalyInput(faust.Record, validation=True):
+    inp: EncoderInput
+    anomaly: float

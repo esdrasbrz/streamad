@@ -1,7 +1,7 @@
 import pickle
-from functools import lru_cache
 from htm.bindings.algorithms import SpatialPooler, TemporalMemory
-from streamad.models import SpatialPoolerConfig, TemporalMemoryConfig
+from htm.algorithms.anomaly_likelihood import AnomalyLikelihood
+from streamad.models import AnomalyLikelihoodConfig, SpatialPoolerConfig, TemporalMemoryConfig
 
 
 async def get_spatial_pooler(encoding_width: int, config: SpatialPoolerConfig, model_id: str, redis):
@@ -51,6 +51,22 @@ async def get_temporal_memory(sp_config: SpatialPoolerConfig, tm_config: Tempora
         await redis.set(key, pickle.dumps(tm))
 
     return tm
+
+
+async def get_anomaly_likelihood(an_config: AnomalyLikelihoodConfig, model_id: str, redis):
+    key = f'streamad/anomaly-likelihood/{model_id}'
+    an_bytes = await redis.get(key)
+    if an_bytes:
+        an = pickle.loads(an_bytes)
+    else:
+        an = AnomalyLikelihood(
+            learningPeriod=an_config.learning_period,
+            estimationSamples=an_config.estimation_samples,
+            reestimationPeriod=an_config.reestimation_period
+        )
+        await redis.set(key, pickle.dumps(an))
+
+    return an
 
 
 async def update_state(obj, model_id, state_id, redis):
