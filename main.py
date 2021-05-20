@@ -5,7 +5,7 @@ from aioredis import Redis
 import faust
 from faust.web import View, Request, Response
 from htm.bindings.sdr import SDR
-from streamad.models import HtmConfig, Input, EncoderInput, ModelMeta
+from streamad.models import HtmConfig, Input, Output, EncoderInput, ModelMeta
 from streamad.models import SpatialPoolerInput, TemporalMemoryInput, AnomalyInput
 from streamad.encoders import get_time_encoder, get_value_encoder
 from streamad.htm import get_spatial_pooler, get_temporal_memory, get_anomaly_likelihood, update_state
@@ -23,7 +23,7 @@ app = faust.App(
 redis = Redis.from_url(os.getenv('REDIS_URL', 'redis://localhost'))
 
 input_topic = app.topic(
-    'streamad-input', value_type=Input, key_type=str)
+    'streamad-input', value_type=Input)
 encoder_topic = app.topic(
     'streamad-encoder', value_type=EncoderInput)
 spatial_pooler_topic = app.topic(
@@ -32,6 +32,8 @@ temporal_memory_topic = app.topic(
     'streamad-temporal-memory', value_type=TemporalMemoryInput, key_type=str)
 anomaly_topic = app.topic(
     'streamad-anomaly', value_type=AnomalyInput, key_type=str)
+output_topic = app.topic(
+    'streamad-output', value_type=Output)
 
 
 @app.page('/config/{model_id}')
@@ -61,10 +63,10 @@ class Config(View):
 
 @app.agent(input_topic)
 async def input_agent(input_stream):
-    async for model_id, row in input_stream.items():
-        config = await get_config(redis, model_id)
+    async for row in input_stream:
+        config = await get_config(redis, row.model_id)
 
-        meta = ModelMeta(config=config, model_id=model_id)
+        meta = ModelMeta(config=config, model_id=row.model_id)
         encoder_input = EncoderInput(
             meta=meta, ts=row.ts, value=row.value)
 
@@ -197,8 +199,14 @@ async def anomaly_agent(input_stream):
 
         # calculate anomaly probability
         like = an.anomalyProbability(an_input.inp.value, an_input.anomaly, an_input.inp.ts)
-        logScore = an.computeLogLikelihood(like)
-        logging.info(logScore)
+        log_score = an.computeLogLikelihood(like)
+
+        output = Output(
+            model_id=model_id,
+            ts=an_input.inp.ts,
+            value=an_input.inp.value,
+            anomaly_score=log_score)
+        await output_topic.send(value=output)
 
         # commit model
         if time.time() - last_commit >= _MODEL_COMMIT_INTERVAL_SEC:

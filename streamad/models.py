@@ -55,8 +55,16 @@ class HtmConfig(faust.Record, validation=True):
 
 
 class Input(faust.Record, validation=True):
+    model_id: str
     ts: datetime
     value: float
+
+
+class Output(faust.Record, validation=True):
+    model_id: str
+    ts: datetime
+    value: float
+    anomaly_score: float
 
 
 class ModelMeta(faust.Record, validation=True):

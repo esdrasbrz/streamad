@@ -5,7 +5,7 @@ from aiofile import AIOFile, LineReader
 from streamad.models import Input
 
 
-async def parse_csv_data(filename, ignore_header=True):
+async def parse_csv_data(filename, model_id, ignore_header=True):
     async with AIOFile(filename, 'r') as f:
         n = 0
         async for line in LineReader(f):
@@ -16,7 +16,10 @@ async def parse_csv_data(filename, ignore_header=True):
                 continue
 
             ts, value = line.split(',')
-            yield Input(dt.datetime.strptime(ts, '%Y-%m-%d %H:%M:%S'), float(value))
+            yield Input(
+                model_id=model_id,
+                ts=dt.datetime.strptime(ts, '%Y-%m-%d %H:%M:%S'),
+                value=float(value))
 
 
 def b64_pickle(obj):

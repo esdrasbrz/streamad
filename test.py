@@ -11,7 +11,7 @@ app = faust.App(
     broker='kafka://' + os.getenv('KAFKA_BROKER', 'localhost:9092')
 )
 input_topic = app.topic(
-    'streamad-input', value_type=Input, key_type=str)
+    'streamad-input', value_type=Input)
 
 
 @app.command(
@@ -23,15 +23,15 @@ async def produce(self, path) -> None:
     if path is None:
         self.say("You must provide the --path option")
 
-    async def produce_values(model_id, values):
+    async def produce_values(values):
         async for value in values:
-            await input_topic.send(key=model_id, value=value)
+            await input_topic.send(value=value)
 
     files = os.listdir(path)
     produce_args = ((fn.lower(), os.path.join(path, fn)) for fn in files)
 
     await asyncio.gather(*[
-        produce_values(model_id, parse_csv_data(filepath))
+        produce_values(parse_csv_data(filepath, model_id))
         for model_id, filepath in produce_args
     ])
 
