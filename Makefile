@@ -10,6 +10,9 @@ local:
 produce:
 	python3 test.py produce --path $(path)
 
+graph:
+	python3 test.py worker -l info
+
 infra:
 	docker-compose up zookeeper broker control-center redis
 
