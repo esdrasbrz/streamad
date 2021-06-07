@@ -42,8 +42,8 @@ class TemporalMemoryConfig(faust.Record, validation=True):
 
 
 class AnomalyLikelihoodConfig(faust.Record, validation=True):
-    learning_period: int = 288
-    reestimation_period: int = 100
+    learning_period: int = 302
+    reestimation_period: int = 302
     estimation_samples: int = 100
 
 

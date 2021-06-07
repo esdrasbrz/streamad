@@ -25,7 +25,7 @@ redis = Redis.from_url(os.getenv('REDIS_URL', 'redis://localhost'))
 input_topic = app.topic(
     'streamad-input', value_type=Input)
 encoder_topic = app.topic(
-    'streamad-encoder', value_type=EncoderInput)
+    'streamad-encoder', value_type=EncoderInput, key_type=str)
 spatial_pooler_topic = app.topic(
     'streamad-spatial-pooler', value_type=SpatialPoolerInput, key_type=str)
 temporal_memory_topic = app.topic(
@@ -34,6 +34,12 @@ anomaly_topic = app.topic(
     'streamad-anomaly', value_type=AnomalyInput, key_type=str)
 output_topic = app.topic(
     'streamad-output', value_type=Output)
+
+
+# used to save algorithm state
+sps = {}
+tms = {}
+ans = {}
 
 
 @app.page('/config/{model_id}')
@@ -70,7 +76,7 @@ async def input_agent(input_stream):
         encoder_input = EncoderInput(
             meta=meta, ts=row.ts, value=row.value)
 
-        await encoder_topic.send(value=encoder_input)
+        await encoder_topic.send(value=encoder_input, key=row.model_id)
 
 
 ## ----
@@ -80,7 +86,7 @@ async def input_agent(input_stream):
 
 @app.agent(encoder_topic)
 async def encoder(input_stream):
-    async for enc_input in input_stream:
+    async for model_id, enc_input in input_stream.items():
         time_enc = get_time_encoder(
             tuple(enc_input.meta.config.encoder.time.time_of_day),
             enc_input.meta.config.encoder.time.weekend)
@@ -101,7 +107,7 @@ async def encoder(input_stream):
             encoding=encoding_bytes,
             encoding_width=time_enc.size + value_enc.size
         )
-        await spatial_pooler_topic.send(key=enc_input.meta.model_id, value=sp_input)
+        await spatial_pooler_topic.send(key=model_id, value=sp_input)
 
 
 ## ----
@@ -111,8 +117,6 @@ async def encoder(input_stream):
 
 @app.agent(spatial_pooler_topic)
 async def spatial_pooler_agent(input_stream):
-    sps = {}
-
     async for model_id, sp_input in input_stream.items():
         # load spatial pooler object
         try:
@@ -150,8 +154,6 @@ async def spatial_pooler_agent(input_stream):
 
 @app.agent(temporal_memory_topic)
 async def temporal_memory_agent(input_stream):
-    tms = {}
-
     async for model_id, tm_input in input_stream.items():
         # load temporal memory object
         try:
@@ -185,8 +187,6 @@ async def temporal_memory_agent(input_stream):
 
 @app.agent(anomaly_topic)
 async def anomaly_agent(input_stream):
-    ans = {}
-
     async for model_id, an_input in input_stream.items():
         try:
             an = ans[model_id][0]

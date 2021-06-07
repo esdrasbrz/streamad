@@ -31,15 +31,15 @@ async def produce(self, path) -> None:
     if path is None:
         self.say("You must provide the --path option")
 
-    async def produce_values(values):
+    async def produce_values(model_id, values):
         async for value in values:
-            await input_topic.send(value=value)
+            await input_topic.send(value=value, key=model_id)
 
     files = filter(lambda x: x.endswith('.csv'), os.listdir(path))
     produce_args = ((fn.lower(), os.path.join(path, fn)) for fn in files)
 
     await asyncio.gather(*[
-        produce_values(parse_csv_data(filepath, model_id))
+        produce_values(model_id, parse_csv_data(filepath, model_id))
         for model_id, filepath in produce_args
     ])
 
@@ -53,6 +53,7 @@ async def graph_output(output_stream):
             data = []
             _MODELS[row.model_id] = data
 
+        anomaly_score = row.anomaly_score if row.anomaly_score > 0.5 else 0
         data.append(DataPoint(row.ts, row.value, row.anomaly_score))
 
 
@@ -83,7 +84,7 @@ async def graph_commit():
         ax2.tick_params(axis='y', labelcolor=color)
 
         fig.tight_layout()
-        plt.savefig(model_id + '.svg', format='svg', dpi=1200)
+        plt.savefig(f'debug/{model_id}.svg', format='svg', dpi=1200)
         plt.close()
 
 
